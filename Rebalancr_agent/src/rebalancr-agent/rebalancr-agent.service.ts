@@ -25,6 +25,25 @@ dotenv.config();
 export class RebalancrAgentService {
   constructor() {}
 
+  async agentChat(prompt: string) {
+    try {
+      const llmPrompt = `You are an AI agent specializing in the mantle blokchain. Provide a clear, concise, and accurate response to the following message: ${prompt}`;
+
+      const result = await generateText({
+        model: openai('gpt-4o-mini'),
+        maxSteps: 10,
+        prompt: llmPrompt,
+        onStepFinish: (event) => {
+          console.log(event.toolResults);
+        },
+      });
+
+      return { response: result.text };
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
   async swapToken(pK: any, prompt: string) {
     console.log(prompt);
     try {
@@ -64,60 +83,45 @@ export class RebalancrAgentService {
 
   async analyzeToken(contract: string) {
     try {
-      // Prepare URLs for fetch calls
-      const baseUrl = 'https://explorer.mode.network/api/v2';
-      const geckoUrl = `https://api.geckoterminal.com/api/v2/networks/mode/tokens/${contract}`;
-      const urls = [
-        `${baseUrl}/addresses/${contract}`,
-        `${baseUrl}/tokens/${contract}/holders`,
-        `${baseUrl}/tokens/${contract}/counters`,
-        `${geckoUrl}`,
-      ];
+      const geckoUrl = `https://api.geckoterminal.com/api/v2/networks/mantle/tokens/${contract}`;
+      const urls = [`${geckoUrl}`];
 
       // Fetch all data concurrently
-      const [tokenInfo, tokenHolders, tokenHoldersCount, geckoTokenInfo] =
-        await Promise.all(
-          urls.map((url) =>
-            fetch(url, { method: 'GET' }).then((response) => response.json()),
-          ),
-        );
+      const [tokenData] = await Promise.all(
+        urls.map((url) =>
+          fetch(url, { method: 'GET' }).then((response) => response.json()),
+        ),
+      );
 
       // Respond with the collected data
       const tokenAnalyticData = {
-        tokenName: tokenInfo.name,
-        tokenSymbol: tokenInfo['token'].symbol,
-        tokenBalance: tokenInfo.coin_balance,
-        tokenCreationHash: tokenInfo.creation_tx_hash,
-        tokenExchangeRate: tokenInfo.exchange_rate,
-        tokenIsVerified: tokenInfo.is_verified,
-        tokenCreator: tokenInfo.creator_address_hash,
-        totalSupply: tokenInfo['token'].total_supply,
-        totalHolders: tokenInfo['token'].holders,
-        decimals: tokenInfo['token'].decimals,
-        topTokenHolderValues: tokenHolders.items.map((item) => item.value),
-        totalTransactions: tokenHoldersCount.transfers_count,
-        formattedTotalSupply: tokenInfo['token'].total_supply,
-        fdv: geckoTokenInfo.data.attributes.fdv_usd,
-        volume: geckoTokenInfo.data.attributes.volume_usd.h24,
-        image: geckoTokenInfo.data.attributesimage_url,
+        address: tokenData.data.attributes.address,
+        name: tokenData.data.attributes.name,
+        symbol: tokenData.data.attributes.symbol,
+        decimal: tokenData.data.attributes.decimal,
+        total_supply: tokenData.data.attributes.total_supply,
+        price_usd: tokenData.data.attributes.price_usd,
+        fully_Diluted_Valuation:
+          tokenData.data.attributes.fdv_usd ||
+          parseFloat(tokenData.data.attributes.price_usd) *
+            parseFloat(tokenData.data.attributes.price_usd),
+        market_cap_usd: tokenData.data.attributes.market_cap_usd,
+        volume_usd: tokenData.data.attributes.volume_usd.h24,
       };
 
       const prompt = `You are an AI agent specializing in Token sentiment analysis. Your task is to analyze a token based on the provided on-chain data and generate detailed  market sentiment analysis in this format:
       Name of token, symbol, price, Number of holders, FDV, and 24hr volume  Please present the response in a structured  markdown format,for a crypto trader.
 
 Here is the token data:
-- Token Name: ${tokenAnalyticData.tokenName}
-- Symbol: ${tokenAnalyticData.tokenSymbol}
-- Total Supply: ${tokenAnalyticData.totalSupply}
-- Verified: ${tokenAnalyticData.tokenIsVerified}
-- Holders: ${tokenAnalyticData.totalHolders}
-- Exchange Rate: $${tokenAnalyticData.tokenExchangeRate}
-- Top Holder Balances: ${tokenAnalyticData.topTokenHolderValues}
-- Total Transactions: ${tokenAnalyticData.totalTransactions}
-- Total Holders : ${tokenAnalyticData.totalHolders}
-- FDV : ${tokenAnalyticData.fdv}
-- Volume 24hrs : ${tokenAnalyticData.volume}
-
+- Token Name: ${tokenAnalyticData.name}  
+- Symbol: ${tokenAnalyticData.symbol}  
+- Contract Address: ${tokenAnalyticData.address}  
+- Decimals: ${tokenAnalyticData.decimal}  
+- Total Supply: ${tokenAnalyticData.total_supply}  
+- Current Price (USD): $${tokenAnalyticData.price_usd}  
+- Fully Diluted Valuation (FDV): $${tokenAnalyticData.fully_Diluted_Valuation}  
+${tokenAnalyticData.market_cap_usd ? `- **Market Cap (USD)**: $${tokenAnalyticData.market_cap_usd}` : ''}  
+- 24h Trading Volume (USD): $${tokenAnalyticData.volume_usd || 'Data Missing'}  
 `;
 
       const result = await generateText({

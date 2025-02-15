@@ -32,7 +32,7 @@ const MOE_ADDRESS = process.env.MOE_ADDRESS;
 
 @Injectable()
 export class RebalancrBotService {
-  private readonly modeMindbot: TelegramBot;
+  private readonly mantleAgentbot: TelegramBot;
   private logger = new Logger(RebalancrBotService.name);
 
   constructor(
@@ -42,20 +42,28 @@ export class RebalancrBotService {
     @InjectModel(User.name) private readonly UserModel: Model<User>,
     @InjectModel(Session.name) private readonly SessionModel: Model<Session>,
   ) {
-    this.modeMindbot = new TelegramBot(token, { polling: true });
-    this.modeMindbot.on('message', this.handleRecievedMessages);
-    this.modeMindbot.on('callback_query', this.handleButtonCommands);
+    this.mantleAgentbot = new TelegramBot(token, { polling: true });
+    this.mantleAgentbot.on('message', this.handleRecievedMessages);
+    this.mantleAgentbot.on('callback_query', this.handleButtonCommands);
   }
 
   handleRecievedMessages = async (msg: any) => {
     this.logger.debug(msg);
     try {
-      await this.modeMindbot.sendChatAction(msg.chat.id, 'typing');
+      await this.mantleAgentbot.sendChatAction(msg.chat.id, 'typing');
 
       const [user, session] = await Promise.all([
         this.UserModel.findOne({ chatId: msg.chat.id }),
         this.SessionModel.findOne({ chatId: msg.chat.id }),
       ]);
+
+      const regex2 = /^0x[a-fA-F0-9]{64}$/;
+      const regex = /^Swap (?:also )?(\d+\.?\d*) (\w+) (?:to|for) (\w+)$/i;
+      const match = msg.text.trim().match(regex);
+      const match2 = msg.text.trim().match(regex2);
+      if ((match || match2) && !session) {
+        return this.handleAgentprompts(user, msg.text.trim());
+      }
 
       // Handle text inputs if not a command
       if (msg.text !== '/start' && msg.text !== '/menu' && session) {
@@ -89,7 +97,7 @@ export class RebalancrBotService {
         const welcome = await welcomeMessageMarkup(username);
         if (welcome) {
           const replyMarkup = { inline_keyboard: welcome.keyboard };
-          await this.modeMindbot.sendMessage(msg.chat.id, welcome.message, {
+          await this.mantleAgentbot.sendMessage(msg.chat.id, welcome.message, {
             reply_markup: replyMarkup,
             parse_mode: 'HTML',
           });
@@ -102,10 +110,14 @@ export class RebalancrBotService {
         const allFeatures = await allFeaturesMarkup(user);
         if (allFeatures) {
           const replyMarkup = { inline_keyboard: allFeatures.keyboard };
-          await this.modeMindbot.sendMessage(msg.chat.id, allFeatures.message, {
-            parse_mode: 'HTML',
-            reply_markup: replyMarkup,
-          });
+          await this.mantleAgentbot.sendMessage(
+            msg.chat.id,
+            allFeatures.message,
+            {
+              parse_mode: 'HTML',
+              reply_markup: replyMarkup,
+            },
+          );
         }
       }
     } catch (error) {
@@ -119,14 +131,45 @@ export class RebalancrBotService {
     session?: SessionDocument,
     // user?: UserDocument,
   ) => {
-    await this.modeMindbot.sendChatAction(msg.chat.id, 'typing');
+    await this.mantleAgentbot.sendChatAction(msg.chat.id, 'typing');
     try {
-      if (session.tokenInsight) {
+      const regex2 = /^0x[a-fA-F0-9]{64}$/;
+      const regex = /^Swap (?:also )?(\d+\.?\d*) (\w+) (?:to|for) (\w+)$/i;
+      const match = msg.text.trim().match(regex);
+      const match2 = msg.text.trim().match(regex2);
+
+      if (match) {
+        const user = await this.UserModel.findOne({ chatId: msg.chat.id });
+        await this.mantleAgentbot.sendChatAction(user.chatId, 'typing');
+        const encryptedWallet = await this.walletService.decryptWallet(
+          `${process.env.DEFAULT_WALLET_PIN}`,
+          user.walletDetails,
+        );
+        console.log(encryptedWallet);
+        if (encryptedWallet.privateKey) {
+          const response = await this.rebalancrAgentService.swapToken(
+            encryptedWallet.privateKey,
+            msg.text.trim(),
+          );
+          if (response) {
+            const regex = /0x[a-fA-F0-9]{64}/g;
+            const matches = response.match(regex);
+            return await this.mantleAgentbot.sendMessage(
+              user.chatId,
+              `${response}.\n${matches[0] ? `View on mantlescan [${matches[0]}](https://mantlescan.xyz/tx/${matches[0]})` : ''}`,
+              {
+                parse_mode: 'Markdown',
+              },
+            );
+          }
+        }
+      }
+      if (session.tokenInsight && match2) {
         const tokenInsight = await this.rebalancrAgentService.analyzeToken(
           msg.text.trim(),
         );
         if (tokenInsight.insight) {
-          await this.modeMindbot.sendMessage(
+          await this.mantleAgentbot.sendMessage(
             msg.chat.id,
             `${tokenInsight.insight}`,
             { parse_mode: 'Markdown' },
@@ -153,7 +196,7 @@ export class RebalancrBotService {
           );
         }
         await this.SessionModel.deleteMany({ chatId: msg.chat.id });
-        await this.modeMindbot.sendMessage(
+        await this.mantleAgentbot.sendMessage(
           msg.chat.id,
           `Allocation succesfully set\n- USDC :${Allocation.allocation1}%\n- MODE : ${Allocation.allocation2} %`,
         );
@@ -174,7 +217,7 @@ export class RebalancrBotService {
           );
         }
         await this.SessionModel.deleteMany({ chatId: msg.chat.id });
-        await this.modeMindbot.sendMessage(
+        await this.mantleAgentbot.sendMessage(
           msg.chat.id,
           `Threshold succesfully set\n- Upper :${threshold.upperThreshold}%\n- Lower : ${threshold.lowerThreshold} %`,
         );
@@ -196,7 +239,7 @@ export class RebalancrBotService {
           session.importWallet &&
           session.importWalletPromptInput
         ) {
-          await this.modeMindbot.sendChatAction(msg.chat.id, 'typing');
+          await this.mantleAgentbot.sendChatAction(msg.chat.id, 'typing');
           if (await this.isPrivateKey(msg.text!.trim(), msg.chat.id)) {
             const privateKey = msg.text!.trim();
             console.log(privateKey);
@@ -232,7 +275,7 @@ export class RebalancrBotService {
               i++
             ) {
               promises.push(
-                await this.modeMindbot.deleteMessage(
+                await this.mantleAgentbot.deleteMessage(
                   msg.chat.id,
                   latestSession!.importWalletPromptInputId[i],
                 ),
@@ -241,7 +284,7 @@ export class RebalancrBotService {
             // loop through to delete all userReply
             for (let i = 0; i < latestSession!.userInputId.length; i++) {
               promises.push(
-                await this.modeMindbot.deleteMessage(
+                await this.mantleAgentbot.deleteMessage(
                   msg.chat.id,
                   latestSession!.userInputId[i],
                 ),
@@ -255,7 +298,7 @@ export class RebalancrBotService {
       } catch (error) {
         console.error(error);
 
-        return await this.modeMindbot.sendMessage(
+        return await this.mantleAgentbot.sendMessage(
           msg.chat.id,
           `Processing command failed, please try again`,
         );
@@ -268,23 +311,62 @@ export class RebalancrBotService {
   //handler for users inputs
   handleAgentprompts = async (user: UserDocument, msg: string) => {
     console.log('here');
-    await this.modeMindbot.sendChatAction(user.chatId, 'typing');
+    await this.mantleAgentbot.sendChatAction(user.chatId, 'typing');
     try {
-      const encryptedWallet = await this.walletService.decryptWallet(
-        `${process.env.DEFAULT_WALLET_PIN}`,
-        user.walletDetails,
-      );
-      console.log(encryptedWallet);
-      if (encryptedWallet.privateKey) {
-        const response = await this.rebalancrAgentService.swapToken(
-          encryptedWallet.privateKey,
-          msg,
+      const regex2 = /^0x[a-fA-F0-9]{64}$/;
+      const regex = /^Swap (?:also )?(\d+\.?\d*) (\w+) (?:to|for) (\w+)$/i;
+      const match = msg.trim().match(regex);
+      const match2 = msg.trim().match(regex2);
+      if (match) {
+        await this.mantleAgentbot.sendChatAction(user.chatId, 'typing');
+        const encryptedWallet = await this.walletService.decryptWallet(
+          `${process.env.DEFAULT_WALLET_PIN}`,
+          user.walletDetails,
         );
-        if (response) {
-          return await this.modeMindbot.sendMessage(user.chatId, response, {
-            parse_mode: 'Markdown',
-          });
+        console.log(encryptedWallet);
+        if (encryptedWallet.privateKey) {
+          const response = await this.rebalancrAgentService.swapToken(
+            encryptedWallet.privateKey,
+            msg,
+          );
+
+          if (response) {
+            const regex = /0x[a-fA-F0-9]{64}/g;
+            const matches = response.match(regex);
+            return await this.mantleAgentbot.sendMessage(
+              user.chatId,
+              `${response}.\n${matches[0] ? `View on mantlescan [${matches[0]}](https://mantlescan.xyz/tx/${matches[0]})` : ''}`,
+              {
+                parse_mode: 'Markdown',
+              },
+            );
+          }
         }
+      } else if (match2) {
+        const tokenInsight = await this.rebalancrAgentService.analyzeToken(
+          msg.trim(),
+        );
+        if (tokenInsight.insight) {
+          await this.mantleAgentbot.sendMessage(
+            user.chatId,
+            `${tokenInsight.insight}`,
+            { parse_mode: 'Markdown' },
+          );
+          await this.SessionModel.deleteMany({ chatId: user.chatId });
+          return;
+        }
+      } else if (!match2 && !match) {
+        const response = await this.rebalancrAgentService.agentChat(msg);
+        if (response.response) {
+          return await this.mantleAgentbot.sendMessage(
+            user.chatId,
+            response.response,
+            {
+              parse_mode: 'Markdown',
+            },
+          );
+        }
+        return;
       }
     } catch (error) {
       console.log(error);
@@ -293,7 +375,7 @@ export class RebalancrBotService {
 
   promptAgentToRebalance = async (user: UserDocument, msg: string) => {
     console.log('rebalancing');
-    await this.modeMindbot.sendChatAction(user.chatId, 'typing');
+    await this.mantleAgentbot.sendChatAction(user.chatId, 'typing');
     try {
       const encryptedWallet = await this.walletService.decryptWallet(
         `${process.env.DEFAULT_WALLET_PIN}`,
@@ -306,9 +388,11 @@ export class RebalancrBotService {
           msg,
         );
         if (response) {
-          return await this.modeMindbot.sendMessage(
+          const regex = /0x[a-fA-F0-9]{64}/g;
+          const matches = response.match(regex);
+          return await this.mantleAgentbot.sendMessage(
             user.chatId,
-            `🔔Rebalance Alert🔔\n\n${response}`,
+            `🔔Rebalance Alert🔔\n\n${response}.\n${matches[0] ? `View on mantlescan [${matches[0]}](https://mantlescan.xyz/tx/${matches[0]})` : ''}`,
             {
               parse_mode: 'Markdown',
             },
@@ -343,7 +427,7 @@ export class RebalancrBotService {
     const chatId = query.message.chat.id;
 
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       const user = await this.UserModel.findOne({ chatId: chatId });
       let session: SessionDocument;
       switch (command) {
@@ -361,13 +445,16 @@ export class RebalancrBotService {
               { chatId },
               { rebalanceEnabled: true },
             );
-            return this.modeMindbot.sendMessage(chatId, ` Rebalancing Enabled`);
+            return this.mantleAgentbot.sendMessage(
+              chatId,
+              ` Rebalancing Enabled`,
+            );
           } else if (user && user.rebalanceEnabled) {
             await this.UserModel.updateOne(
               { chatId },
               { rebalanceEnabled: false },
             );
-            return this.modeMindbot.sendMessage(
+            return this.mantleAgentbot.sendMessage(
               chatId,
               ` Rebalancing Disabled`,
             );
@@ -401,7 +488,7 @@ export class RebalancrBotService {
         case '/linkWallet':
           // check if user already have a wallet
           if (user!.walletAddress) {
-            await this.modeMindbot.sendMessage(
+            await this.mantleAgentbot.sendMessage(
               query.message.chat.id,
               `‼️ You already have a wallet\n\nto link a new, make sure to export and secure you old wallet and then click on the reset wallet button`,
             );
@@ -418,14 +505,14 @@ export class RebalancrBotService {
             await this.promptWalletPrivateKEY(chatId);
             return;
           }
-          return await this.modeMindbot.sendMessage(
+          return await this.mantleAgentbot.sendMessage(
             query.message.chat.id,
             `Processing command failed, please try again`,
           );
 
         case '/fundWallet':
           if (user?.walletAddress) {
-            return await this.modeMindbot.sendMessage(
+            return await this.mantleAgentbot.sendMessage(
               chatId,
               `Your Address:\n<b><code>${user?.walletAddress}</code></b>\n\n send token to your address above `,
               {
@@ -446,7 +533,7 @@ export class RebalancrBotService {
               },
             );
           }
-          return await this.modeMindbot.sendMessage(
+          return await this.mantleAgentbot.sendMessage(
             chatId,
             'You dont have any wallet Address to fund',
           );
@@ -459,7 +546,7 @@ export class RebalancrBotService {
 
         case '/exportWallet':
           if (!user!.walletDetails) {
-            return this.modeMindbot.sendMessage(
+            return this.mantleAgentbot.sendMessage(
               chatId,
               `You Don't have a wallet`,
             );
@@ -486,7 +573,7 @@ export class RebalancrBotService {
               });
               const deleteMessagesPromises = [
                 ...latestSession!.userInputId.map((id) =>
-                  this.modeMindbot.deleteMessage(chatId, id),
+                  this.mantleAgentbot.deleteMessage(chatId, id),
                 ),
               ];
 
@@ -505,7 +592,7 @@ export class RebalancrBotService {
             // Delete the session after operations
             await this.SessionModel.deleteMany({ chatId: chatId });
           }
-          return await this.modeMindbot.sendMessage(
+          return await this.mantleAgentbot.sendMessage(
             query.message.chat.id,
             `Processing command failed, please try again`,
           );
@@ -523,9 +610,9 @@ export class RebalancrBotService {
           });
           if (session) {
             try {
-              await this.modeMindbot.sendChatAction(chatId, 'typing');
+              await this.mantleAgentbot.sendChatAction(chatId, 'typing');
               if (!user) {
-                return await this.modeMindbot.sendMessage(
+                return await this.mantleAgentbot.sendMessage(
                   chatId,
                   'User not found. Please try again.',
                 );
@@ -542,7 +629,7 @@ export class RebalancrBotService {
                 },
               );
 
-              await this.modeMindbot.sendMessage(
+              await this.mantleAgentbot.sendMessage(
                 chatId,
                 'Wallet deleted successfully, you can now create or import a new wallet',
               );
@@ -552,7 +639,7 @@ export class RebalancrBotService {
               console.log(error);
             }
           }
-          return await this.modeMindbot.sendMessage(
+          return await this.mantleAgentbot.sendMessage(
             query.message.chat.id,
             `Processing command failed, please try again`,
           );
@@ -567,7 +654,7 @@ export class RebalancrBotService {
             await this.promptTokenAddress(chatId);
             return;
           }
-          return await this.modeMindbot.sendMessage(
+          return await this.mantleAgentbot.sendMessage(
             query.message.chat.id,
             `Processing command failed, please try again`,
           );
@@ -576,39 +663,39 @@ export class RebalancrBotService {
           return this.linkBotToAppMarkup(chatId, user);
 
         case '/setTargetAllocation':
-          await this.modeMindbot.sendChatAction(chatId, 'typing');
+          await this.mantleAgentbot.sendChatAction(chatId, 'typing');
           return await this.setTargetAllocation(chatId);
 
         case '/setThreshold':
-          await this.modeMindbot.sendChatAction(chatId, 'typing');
+          await this.mantleAgentbot.sendChatAction(chatId, 'typing');
           return await this.setThreshold(chatId);
 
         //   close opened markup and delete session
         case '/closeDelete':
-          await this.modeMindbot.sendChatAction(
+          await this.mantleAgentbot.sendChatAction(
             query.message.chat.id,
             'typing',
           );
           await this.SessionModel.deleteMany({
             chatId: chatId,
           });
-          return await this.modeMindbot.deleteMessage(
+          return await this.mantleAgentbot.deleteMessage(
             query.message.chat.id,
             query.message.message_id,
           );
 
         case '/close':
-          await this.modeMindbot.sendChatAction(
+          await this.mantleAgentbot.sendChatAction(
             query.message.chat.id,
             'typing',
           );
-          return await this.modeMindbot.deleteMessage(
+          return await this.mantleAgentbot.deleteMessage(
             query.message.chat.id,
             query.message.message_id,
           );
 
         default:
-          return await this.modeMindbot.sendMessage(
+          return await this.mantleAgentbot.sendMessage(
             query.message.chat.id,
             `Processing command failed, please try again`,
           );
@@ -620,16 +707,20 @@ export class RebalancrBotService {
 
   sendAllFeature = async (user: UserDocument) => {
     try {
-      await this.modeMindbot.sendChatAction(user.chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(user.chatId, 'typing');
       const allFeatures = await allFeaturesMarkup(user);
       if (allFeatures) {
         const replyMarkup = {
           inline_keyboard: allFeatures.keyboard,
         };
-        await this.modeMindbot.sendMessage(user.chatId, allFeatures.message, {
-          parse_mode: 'HTML',
-          reply_markup: replyMarkup,
-        });
+        await this.mantleAgentbot.sendMessage(
+          user.chatId,
+          allFeatures.message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup,
+          },
+        );
       }
     } catch (error) {
       console.log(error);
@@ -638,16 +729,20 @@ export class RebalancrBotService {
 
   sendAllWalletFeature = async (chatId: any) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       const allWalletFeatures = await walletFeaturesMarkup();
       if (allWalletFeatures) {
         const replyMarkup = {
           inline_keyboard: allWalletFeatures.keyboard,
         };
-        await this.modeMindbot.sendMessage(chatId, allWalletFeatures.message, {
-          parse_mode: 'HTML',
-          reply_markup: replyMarkup,
-        });
+        await this.mantleAgentbot.sendMessage(
+          chatId,
+          allWalletFeatures.message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup,
+          },
+        );
       }
     } catch (error) {
       console.log(error);
@@ -658,7 +753,7 @@ export class RebalancrBotService {
     ChatId: TelegramBot.ChatId,
     walletAddress: string,
   ) => {
-    await this.modeMindbot.sendChatAction(ChatId, 'typing');
+    await this.mantleAgentbot.sendChatAction(ChatId, 'typing');
     try {
       const walletDetails = await wallerDetailsMarkup(walletAddress);
       if (wallerDetailsMarkup!) {
@@ -666,7 +761,7 @@ export class RebalancrBotService {
           inline_keyboard: walletDetails.keyboard,
         };
 
-        return await this.modeMindbot.sendMessage(
+        return await this.mantleAgentbot.sendMessage(
           ChatId,
           walletDetails.message,
           {
@@ -682,8 +777,8 @@ export class RebalancrBotService {
 
   promptWalletPrivateKEY = async (chatId: TelegramBot.ChatId) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
-      const privateKeyPromptId = await this.modeMindbot.sendMessage(
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
+      const privateKeyPromptId = await this.mantleAgentbot.sendMessage(
         chatId,
         `Please enter wallet's private key`,
         {
@@ -708,10 +803,10 @@ export class RebalancrBotService {
 
   showBalance = async (chatId: TelegramBot.ChatId) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       const user = await this.UserModel.findOne({ chatId: chatId });
       if (!user?.walletAddress) {
-        return this.modeMindbot.sendMessage(
+        return this.mantleAgentbot.sendMessage(
           chatId,
           `You don't have a wallet connected`,
         );
@@ -751,10 +846,14 @@ export class RebalancrBotService {
       if (showBalance) {
         const replyMarkup = { inline_keyboard: showBalance.keyboard };
 
-        return await this.modeMindbot.sendMessage(chatId, showBalance.message, {
-          parse_mode: 'HTML',
-          reply_markup: replyMarkup,
-        });
+        return await this.mantleAgentbot.sendMessage(
+          chatId,
+          showBalance.message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: replyMarkup,
+          },
+        );
       }
     } catch (error) {
       console.log(error);
@@ -763,12 +862,12 @@ export class RebalancrBotService {
 
   showExportWalletWarning = async (chatId: TelegramBot.ChatId) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       const showExportWarning = await exportWalletWarningMarkup();
       if (showExportWarning) {
         const replyMarkup = { inline_keyboard: showExportWarning.keyboard };
 
-        return await this.modeMindbot.sendMessage(
+        return await this.mantleAgentbot.sendMessage(
           chatId,
           showExportWarning.message,
           {
@@ -784,14 +883,14 @@ export class RebalancrBotService {
 
   showUserPortfolio = async (user: UserDocument) => {
     try {
-      await this.modeMindbot.sendChatAction(user.chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(user.chatId, 'typing');
       const userPortfolio = await this.getPortfolio(user.linkCode);
       console.log(userPortfolio);
       const showPortfolio = await showPortfolioMarkup(userPortfolio);
       if (showPortfolio) {
         const replyMarkup = { inline_keyboard: showPortfolio.keyboard };
 
-        return await this.modeMindbot.sendMessage(
+        return await this.mantleAgentbot.sendMessage(
           user.chatId,
           showPortfolio.message,
           {
@@ -810,12 +909,12 @@ export class RebalancrBotService {
     user: UserDocument,
   ) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       if (user.linkCode) {
         const linkAppMarkup = await linkToAppMarkup(user.linkCode);
         const replyMarkup = { inline_keyboard: linkAppMarkup.keyboard };
 
-        return await this.modeMindbot.sendMessage(
+        return await this.mantleAgentbot.sendMessage(
           chatId,
           linkAppMarkup.message,
           {
@@ -838,7 +937,7 @@ export class RebalancrBotService {
       return true;
     } else if (latestSession) {
       if (latestSession!.importWallet) {
-        this.modeMindbot.sendMessage(chatId, 'Invalid Private KEY');
+        this.mantleAgentbot.sendMessage(chatId, 'Invalid Private KEY');
       }
 
       const promises: any[] = [];
@@ -846,7 +945,7 @@ export class RebalancrBotService {
       for (let i = 0; i < latestSession.importWalletPromptInputId.length; i++) {
         try {
           promises.push(
-            await this.modeMindbot.deleteMessage(
+            await this.mantleAgentbot.deleteMessage(
               chatId,
               latestSession!.importWalletPromptInputId[i],
             ),
@@ -859,7 +958,7 @@ export class RebalancrBotService {
       for (let i = 0; i < latestSession.userInputId.length; i++) {
         try {
           promises.push(
-            await this.modeMindbot.deleteMessage(
+            await this.mantleAgentbot.deleteMessage(
               chatId,
               latestSession.userInputId[i],
             ),
@@ -878,12 +977,12 @@ export class RebalancrBotService {
     privateKey: string,
   ) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       const displayPrivateKey = await displayPrivateKeyMarkup(privateKey);
       if (displayPrivateKey) {
         const replyMarkup = { inline_keyboard: displayPrivateKey.keyboard };
 
-        const sendPrivateKey = await this.modeMindbot.sendMessage(
+        const sendPrivateKey = await this.mantleAgentbot.sendMessage(
           chatId,
           displayPrivateKey.message,
           {
@@ -896,7 +995,7 @@ export class RebalancrBotService {
           setTimeout(async () => {
             try {
               // Delete the message after 1 minute
-              await this.modeMindbot.deleteMessage(
+              await this.mantleAgentbot.deleteMessage(
                 chatId,
                 sendPrivateKey.message_id,
               );
@@ -913,12 +1012,12 @@ export class RebalancrBotService {
 
   showResetWalletWarning = async (chatId: TelegramBot.ChatId) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
       const showResetWarning = await resetWalletWarningMarkup();
       if (showResetWarning) {
         const replyMarkup = { inline_keyboard: showResetWarning.keyboard };
 
-        return await this.modeMindbot.sendMessage(
+        return await this.mantleAgentbot.sendMessage(
           chatId,
           showResetWarning.message,
           {
@@ -966,14 +1065,14 @@ export class RebalancrBotService {
 
   getProfilePhoto = async (chatId: number) => {
     try {
-      const photos = await this.modeMindbot.getUserProfilePhotos(chatId, {
+      const photos = await this.mantleAgentbot.getUserProfilePhotos(chatId, {
         limit: 1,
       });
       console.log(photos.photos);
 
       if (photos.total_count > 0 && photos.photos[0].length >= 3) {
         const fileId = photos.photos[0][2].file_id;
-        const file = await this.modeMindbot.getFile(fileId);
+        const file = await this.mantleAgentbot.getFile(fileId);
         const filePath = file.file_path;
 
         const photoUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
@@ -989,7 +1088,7 @@ export class RebalancrBotService {
         }
       } else if (photos.total_count > 0) {
         const fileId = photos.photos[0][0].file_id;
-        const file = await this.modeMindbot.getFile(fileId);
+        const file = await this.mantleAgentbot.getFile(fileId);
         const filePath = file.file_path;
 
         const photoUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
@@ -1011,8 +1110,8 @@ export class RebalancrBotService {
 
   promptTokenAddress = async (chatId: TelegramBot.ChatId) => {
     try {
-      await this.modeMindbot.sendChatAction(chatId, 'typing');
-      const tokenPromptId = await this.modeMindbot.sendMessage(
+      await this.mantleAgentbot.sendChatAction(chatId, 'typing');
+      const tokenPromptId = await this.mantleAgentbot.sendMessage(
         chatId,
         `Please enter the token address`,
         {
@@ -1034,7 +1133,7 @@ export class RebalancrBotService {
         { thresholdSetting: false, allocationSetting: true },
         { upsert: true },
       );
-      const promptId = await this.modeMindbot.sendMessage(
+      const promptId = await this.mantleAgentbot.sendMessage(
         chatId,
         'Input your Target  allocation % for usdc and mode. e.g 60% 40%',
         {
@@ -1057,7 +1156,7 @@ export class RebalancrBotService {
         { thresholdSetting: true, allocationSetting: false },
         { upsert: true },
       );
-      const promptId = await this.modeMindbot.sendMessage(
+      const promptId = await this.mantleAgentbot.sendMessage(
         chatId,
         'Input the upper and lower threshold % eg: 45% 35%',
         {
@@ -1203,7 +1302,7 @@ export class RebalancrBotService {
 
         await this.promptAgentToRebalance(
           user,
-          `Swap ${usdcToSpend} usdc to mode`,
+          `Swap ${usdcToSpend} usdc to moe`,
         );
       } else {
         console.log(
@@ -1221,7 +1320,7 @@ export class RebalancrBotService {
 
     // 🚩 Error Handling: Invalid Format
     if (!matches || matches.length !== 2) {
-      await this.modeMindbot.sendMessage(
+      await this.mantleAgentbot.sendMessage(
         chatId,
         'Invalid input format. Example of valid input: "60% 40%"',
       );
@@ -1236,7 +1335,7 @@ export class RebalancrBotService {
     // 🚩 Validation: Sum must be 100
     const total = allocations.reduce((sum, num) => sum + num, 0);
     if (total !== 100) {
-      await this.modeMindbot.sendMessage(
+      await this.mantleAgentbot.sendMessage(
         chatId,
         `Allocations must sum to 100. Current sum: ${total}`,
       );
@@ -1251,7 +1350,7 @@ export class RebalancrBotService {
     const matches = input.match(/(\d{1,3})\s*%/g);
 
     if (!matches || matches.length !== 2) {
-      await this.modeMindbot.sendMessage(
+      await this.mantleAgentbot.sendMessage(
         chatId,
         'Invalid input format. Example of valid input: "70% 30%"',
       );
@@ -1262,7 +1361,7 @@ export class RebalancrBotService {
 
     const invalidValues = thresholds.filter((t) => t < 0 || t > 100);
     if (invalidValues.length > 0) {
-      await this.modeMindbot.sendMessage(
+      await this.mantleAgentbot.sendMessage(
         chatId,
         `Threshold values must be between 0% and 100%. Invalid values: ${invalidValues.join(', ')}%`,
       );
