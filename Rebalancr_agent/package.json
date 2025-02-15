@@ -24,7 +24,7 @@
     "@goat-sdk/adapter-vercel-ai": "^0.2.7",
     "@goat-sdk/core": "^0.4.6",
     "@goat-sdk/erc20": "file:sdk/goat-sdk/plugins/erc20",
-    "@goat-sdk/plugin-agni": "file:sdk/goat-sdk/plugins/agni",
+    "@goat-sdk/plugin-moe": "file:sdk/goat-sdk/plugins/moe",
     "@goat-sdk/plugin-erc20": "^0.2.9",
     "@goat-sdk/plugin-erc721": "^0.1.18",
     "@goat-sdk/plugin-kim": "^0.1.9",
