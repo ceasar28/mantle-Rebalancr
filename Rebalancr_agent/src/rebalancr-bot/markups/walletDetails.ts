@@ -7,7 +7,7 @@ export const wallerDetailsMarkup = async (address: any) => {
       ? process.env.MANTLE_SCAN_URL_TESTNET
       : process.env.MANTLE_SCAN_URL;
   return {
-    message: `<b>Your Wallet:</b>\n\n<b>Address:</b> <code>${address}</code>\n\n Tap to copy the address and send Eth, USDC or MODE The to deposit.`,
+    message: `<b>Your Wallet:</b>\n\n<b>Address:</b> <code>${address}</code>\n\n Tap to copy the address and send MNT, USDC , USDT OR MOE The to deposit.`,
     keyboard: [
       [
         {
