@@ -198,7 +198,7 @@ export class RebalancrBotService {
         await this.SessionModel.deleteMany({ chatId: msg.chat.id });
         await this.mantleAgentbot.sendMessage(
           msg.chat.id,
-          `Allocation succesfully set\n- USDC :${Allocation.allocation1}%\n- MODE : ${Allocation.allocation2} %`,
+          `Allocation succesfully set\n- USDC :${Allocation.allocation1}%\n- MOE : ${Allocation.allocation2} %`,
         );
       }
 
@@ -1135,7 +1135,7 @@ export class RebalancrBotService {
       );
       const promptId = await this.mantleAgentbot.sendMessage(
         chatId,
-        'Input your Target  allocation % for usdc and mode. e.g 60% 40%',
+        'Input your Target  allocation % for usdc and moe. e.g 60% 40%',
         {
           reply_markup: {
             force_reply: true,
@@ -1158,7 +1158,7 @@ export class RebalancrBotService {
       );
       const promptId = await this.mantleAgentbot.sendMessage(
         chatId,
-        'Input the upper and lower threshold % eg: 45% 35%',
+        'Input the upper and lower threshold trigger % eg: 45% 35%',
         {
           reply_markup: {
             force_reply: true,
@@ -1276,7 +1276,7 @@ export class RebalancrBotService {
 
       // Check if rebalancing is needed
       if (modePercentage > Number(upperThreshold)) {
-        // Calculate how much MODE to sell
+        // Calculate how much MOE to sell
         const modeValueToSell =
           ((modePercentage - Number(modeAllocation)) / 100) *
           totalPortfoliosize;
