@@ -11,7 +11,7 @@ export const wallerDetailsMarkup = async (address: any) => {
     keyboard: [
       [
         {
-          text: '🔎 View on modescan',
+          text: '🔎 View on mantlescan',
           url: `${MANTLE_SCAN_URL}/address/${address}`,
         },
         {
