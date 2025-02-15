@@ -2,17 +2,17 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 export const wallerDetailsMarkup = async (address: any) => {
-  const MODE_SCAN_URL =
+  const MANTLE_SCAN_URL =
     process.env.ENVIRONMENT === 'TESTNET'
-      ? process.env.MODE_SCAN_URL_TESTNET
-      : process.env.MODE_SCAN_URL;
+      ? process.env.MANTLE_SCAN_URL_TESTNET
+      : process.env.MANTLE_SCAN_URL;
   return {
     message: `<b>Your Wallet:</b>\n\n<b>Address:</b> <code>${address}</code>\n\n Tap to copy the address and send Eth, USDC or MODE The to deposit.`,
     keyboard: [
       [
         {
           text: '🔎 View on modescan',
-          url: `${MODE_SCAN_URL}/address/${address}`,
+          url: `${MANTLE_SCAN_URL}/address/${address}`,
         },
         {
           text: 'check Balance',
