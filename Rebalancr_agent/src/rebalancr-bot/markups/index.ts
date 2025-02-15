@@ -6,7 +6,6 @@ import { exportWalletWarningMarkup } from './exportWalletWarning';
 import { displayPrivateKeyMarkup } from './displayPrivateKey';
 import { resetWalletWarningMarkup } from './resetWalletWarning';
 import { walletFeaturesMarkup } from './walletFeatures';
-import { notifyReceiverMarkup } from './notifyReceiver';
 import { linkToAppMarkup } from './linktoapp';
 import { showPortfolioMarkup } from './showPortfolio';
 
@@ -19,7 +18,6 @@ export {
   displayPrivateKeyMarkup,
   resetWalletWarningMarkup,
   walletFeaturesMarkup,
-  notifyReceiverMarkup,
   linkToAppMarkup,
   showPortfolioMarkup,
 };

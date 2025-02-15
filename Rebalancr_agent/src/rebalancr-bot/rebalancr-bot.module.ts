@@ -3,7 +3,6 @@ import { RebalancrBotService } from './rebalancr-bot.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from '../database/schemas/user.schema';
 import { HttpModule } from '@nestjs/axios';
-import { DefiAgentModule } from 'src/defi-agent/defi-agent.module';
 import { DatabaseModule } from 'src/database/database.module';
 import { WalletModule } from 'src/wallet/wallet.module';
 import { Session, SessionSchema } from 'src/database/schemas/session.schema';
@@ -14,7 +13,6 @@ import { RebalancrBotController } from './rebalancr-bot.controller';
   imports: [
     DatabaseModule,
     HttpModule,
-    DefiAgentModule,
     RebalancrAgentModule,
     WalletModule,
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
