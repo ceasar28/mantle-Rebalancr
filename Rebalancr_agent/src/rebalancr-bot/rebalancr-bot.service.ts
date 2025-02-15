@@ -57,11 +57,12 @@ export class RebalancrBotService {
         this.SessionModel.findOne({ chatId: msg.chat.id }),
       ]);
 
-      const regex2 = /^0x[a-fA-F0-9]{64}$/;
+      const regex2 = /^0x[a-fA-F0-9]{40}$/;
       const regex = /^Swap (?:also )?(\d+\.?\d*) (\w+) (?:to|for) (\w+)$/i;
       const match = msg.text.trim().match(regex);
       const match2 = msg.text.trim().match(regex2);
       if ((match || match2) && !session) {
+        console.log(msg.text.trim());
         return this.handleAgentprompts(user, msg.text.trim());
       }
 
@@ -133,10 +134,11 @@ export class RebalancrBotService {
   ) => {
     await this.mantleAgentbot.sendChatAction(msg.chat.id, 'typing');
     try {
-      const regex2 = /^0x[a-fA-F0-9]{64}$/;
+      const regex2 = /^0x[a-fA-F0-9]{40}$/;
       const regex = /^Swap (?:also )?(\d+\.?\d*) (\w+) (?:to|for) (\w+)$/i;
       const match = msg.text.trim().match(regex);
       const match2 = msg.text.trim().match(regex2);
+      console.log(msg.text.trim());
 
       if (match) {
         const user = await this.UserModel.findOne({ chatId: msg.chat.id });
@@ -165,6 +167,7 @@ export class RebalancrBotService {
         }
       }
       if (session.tokenInsight && match2) {
+        console.log('here');
         const tokenInsight = await this.rebalancrAgentService.analyzeToken(
           msg.text.trim(),
         );
